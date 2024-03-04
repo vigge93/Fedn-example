@@ -14,6 +14,8 @@ from sklearn.metrics import (
 from sklearn.datasets import load_iris
 from sklearn.model_selection import train_test_split
 
+import tensorflow as tf
+import numpy as np
 import keras
 
 @dataclass
@@ -65,10 +67,11 @@ def load_data(partition, *, train_only=False, test_only=False):
     if train_only and test_only:
         raise ValueError("train_only and test_only can't both be True")
     X, y = load_iris(return_X_y=True)
+    y = np.array(tf.one_hot(list(y), 3))
     x_train, x_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     n = len(x_train)
     client_n = (n)//clients
-    start = client_n*partition
+    start = (client_n)*(partition-1)
     x_train = x_train[start:start+client_n]
     y_train = y_train[start:start+client_n]
     if train_only:
@@ -107,7 +110,6 @@ def train(in_model_path, out_model_path):
     model.set_weights(weights)
 
     x_train, y_train = load_data(client_id, train_only=True)
-
     model.fit(x_train, y_train, epochs=2)
 
     metadata = {

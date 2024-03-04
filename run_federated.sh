@@ -1,8 +1,10 @@
 num_clients=$1
 rounds=$2
-dataset_name=$4
 
-docker-compose -f ~/fedn/docker-compose.yaml up --detach
+python client/entrypoint.py init_seed
+tar -czvhf package.tgz client
+
+docker-compose -f fedn/docker-compose.yaml up --detach
 
 sleep 5
 
@@ -14,7 +16,6 @@ do
       		-v $PWD/client_configs/client${client}.yaml:/app/client.yaml \
       		-v $PWD/data:/app/data \
       		-e FEDN_CLIENT_ID=$client \
-			-e FEDN_DATASET_NAME=$dataset_name \
 			-e FEDN_CLIENTS=$num_clients \
 			--name fedn_client_${client} \
 			--network=fedn_default \
@@ -47,6 +48,6 @@ echo "Run finished, cleaning up and saving metrics..."
 
 docker rm -f -v $(docker ps -a --filter name=fedn_client* -q)
 
-curl -s localhost:8092/list_validations | jq "to_entries |  map(.value) | .[-1].data | fromjson" > metrics/${dataset_name}_FED_${num_clients}.json
+curl -s localhost:8092/list_validations | jq "to_entries |  map(.value) | .[-1].data | fromjson" > metrics/FED_${num_clients}.json
 
-docker-compose -f ~/fedn/docker-compose.yaml down
+docker-compose -f fedn/docker-compose.yaml down
