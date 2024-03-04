@@ -1,0 +1,5 @@
+discover_host: api-server
+name: FedClient<num>
+network_id: fedn-network
+discover_port: 8092
+validator: True
