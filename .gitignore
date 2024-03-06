@@ -1,1 +1,5 @@
 venv/
+*.npz
+*.tgz
+fedn/
+client*.yaml

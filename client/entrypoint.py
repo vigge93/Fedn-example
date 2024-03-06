@@ -1,53 +1,20 @@
-from dataclasses import dataclass
 import json
 import os
+from dataclasses import dataclass
 
 import fire
-from fedn.utils.helpers.helpers import get_helper, save_metadata, save_metrics
+import keras
+import numpy as np
+import tensorflow as tf
+from sklearn.datasets import load_iris
 from sklearn.metrics import (
     accuracy_score,
     confusion_matrix,
     precision_recall_fscore_support,
-    roc_auc_score,
 )
-
-from sklearn.datasets import load_iris
 from sklearn.model_selection import train_test_split
 
-import tensorflow as tf
-import numpy as np
-import keras
-
-@dataclass
-class Metrics:
-    Time: float
-    Accuracy: float
-    F_score: float
-    ROC_AUC: float | None
-    Precision: float
-    Recall: float
-    TP: int
-    TN: int
-    FP: int
-    FN: int
-
-    def to_dict(self, prefix="") -> dict[str, float | int | None]:
-        return {
-            f"{prefix}ROC_AUC": self.ROC_AUC,
-            f"{prefix}Accuracy": self.Accuracy,
-            f"{prefix}Time": self.Time,
-            f"{prefix}Precision": self.Precision,
-            f"{prefix}Recall": self.Recall,
-            f"{prefix}F_score": self.F_score,
-            f"{prefix}TN": int(self.TN),
-            f"{prefix}TP": int(self.TP),
-            f"{prefix}FN": int(self.FN),
-            f"{prefix}FP": int(self.FP),
-        }
-
-def save_metrics(model: str, dataset: str, metrics: Metrics):
-    with open(os.path.join("metrics", f"{dataset}_{model}.json"), "w") as fd:
-        json.dump(metrics.to_dict(), fd)
+from fedn.utils.helpers.helpers import get_helper, save_metadata, save_metrics
 
 helper = get_helper("numpyhelper")
 
@@ -63,17 +30,45 @@ else:
     client_id = 1
 
 
+@dataclass
+class Metrics:
+    Time: float
+    Accuracy: float
+    F_score: float
+    Precision: float
+    Recall: float
+    TP: int
+    TN: int
+    FP: int
+    FN: int
+
+    def to_dict(self, prefix="") -> dict[str, float | int | None]:
+        return {
+            f"{prefix}Accuracy": self.Accuracy,
+            f"{prefix}Time": self.Time,
+            f"{prefix}Precision": self.Precision,
+            f"{prefix}Recall": self.Recall,
+            f"{prefix}F_score": self.F_score,
+            f"{prefix}TN": int(self.TN),
+            f"{prefix}TP": int(self.TP),
+            f"{prefix}FN": int(self.FN),
+            f"{prefix}FP": int(self.FP),
+        }
+
+
 def load_data(partition, *, train_only=False, test_only=False):
     if train_only and test_only:
         raise ValueError("train_only and test_only can't both be True")
     X, y = load_iris(return_X_y=True)
     y = np.array(tf.one_hot(list(y), 3))
-    x_train, x_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    x_train, x_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
     n = len(x_train)
-    client_n = (n)//clients
-    start = (client_n)*(partition-1)
-    x_train = x_train[start:start+client_n]
-    y_train = y_train[start:start+client_n]
+    client_n = (n) // clients
+    start = (client_n) * (partition - 1)
+    x_train = x_train[start : start + client_n]
+    y_train = y_train[start : start + client_n]
     if train_only:
         return x_train, y_train
     if test_only:
@@ -87,13 +82,14 @@ def compile_model():
     # Define model
     model = keras.models.Sequential()
     model.add(keras.layers.Flatten(input_shape=input_shape))
-    model.add(keras.layers.Dense(64, activation='relu'))
-    model.add(keras.layers.Dropout(0.5))
-    model.add(keras.layers.Dense(32, activation='relu'))
-    model.add(keras.layers.Dense(3, activation='softmax'))
-    model.compile(loss=keras.losses.categorical_crossentropy,
-                  optimizer=keras.optimizers.Adam(),
-                  metrics=['accuracy'])
+    model.add(keras.layers.Dense(10, activation="relu"))
+    model.add(keras.layers.Dense(10, activation="relu"))
+    model.add(keras.layers.Dense(3, activation="softmax"))
+    model.compile(
+        loss=keras.losses.categorical_crossentropy,
+        optimizer=keras.optimizers.Adam(),
+        metrics=["accuracy"],
+    )
 
     return model
 
@@ -110,12 +106,12 @@ def train(in_model_path, out_model_path):
     model.set_weights(weights)
 
     x_train, y_train = load_data(client_id, train_only=True)
-    model.fit(x_train, y_train, epochs=2)
+    model.fit(x_train, y_train, epochs=50)
 
     metadata = {
         # num_examples are mandatory
         "num_examples": len(x_train),
-        'epochs': 2,
+        "epochs": 50,
     }
 
     # Save JSON metadata file (mandatory)
@@ -134,12 +130,11 @@ def validate(in_model_path, out_json_path):
     model.set_weights(weights)
 
     y_pred = model.predict(x_test)
-    roc_auc = roc_auc_score(y_test, y_pred[:, 1])
-    accuracy = accuracy_score(y_test, y_pred.argmax(axis=1))
+    accuracy = accuracy_score(y_test.argmax(axis=1), y_pred.argmax(axis=1))
     precision, recall, fscore, _ = precision_recall_fscore_support(
-        y_test, y_pred.argmax(axis=1), average="binary"
+        y_test.argmax(axis=1), y_pred.argmax(axis=1), average="micro"
     )
-    CM = confusion_matrix(y_test, y_pred.argmax(axis=1))
+    CM = confusion_matrix(y_test.argmax(axis=1), y_pred.argmax(axis=1))
 
     TN = CM[0][0]
     FN = CM[1][0]
@@ -150,7 +145,6 @@ def validate(in_model_path, out_json_path):
         0,
         accuracy,
         fscore,
-        roc_auc,
         precision,
         recall,
         TP,
@@ -159,13 +153,12 @@ def validate(in_model_path, out_json_path):
         FN,
     ).to_dict("test_")
 
-    y_pred = model.predict_proba(x_train)
-    roc_auc = roc_auc_score(y_train, y_pred[:, 1])
-    accuracy = accuracy_score(y_train, y_pred.argmax(axis=1))
+    y_pred = model.predict(x_train)
+    accuracy = accuracy_score(y_train.argmax(axis=1), y_pred.argmax(axis=1))
     precision, recall, fscore, _ = precision_recall_fscore_support(
-        y_train, y_pred.argmax(axis=1), average="binary"
+        y_train.argmax(axis=1), y_pred.argmax(axis=1), average="micro"
     )
-    CM = confusion_matrix(y_train, y_pred.argmax(axis=1))
+    CM = confusion_matrix(y_train.argmax(axis=1), y_pred.argmax(axis=1))
 
     TN = CM[0][0]
     FN = CM[1][0]
@@ -176,7 +169,6 @@ def validate(in_model_path, out_json_path):
         0,
         accuracy,
         fscore,
-        roc_auc,
         precision,
         recall,
         TP,

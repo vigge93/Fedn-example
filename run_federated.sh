@@ -1,6 +1,12 @@
 num_clients=$1
 rounds=$2
 
+if [ $# -lt 2 ]
+  then
+    echo "Not enough arguments supplied"
+	exit
+fi
+
 python client/entrypoint.py init_seed
 tar -czvhf package.tgz client
 
@@ -14,7 +20,6 @@ for client in $(seq 1 $num_clients);
 do
 	docker run \
       		-v $PWD/client_configs/client${client}.yaml:/app/client.yaml \
-      		-v $PWD/data:/app/data \
       		-e FEDN_CLIENT_ID=$client \
 			-e FEDN_CLIENTS=$num_clients \
 			--name fedn_client_${client} \
@@ -27,7 +32,7 @@ clients=0
 while [ $clients != $num_clients ]
 do
 	clients=`curl -s http://localhost:8092/list_clients | jq ".count"`
-	echo $clients $num_clients
+	echo "Clients connected: $clients/$num_clients"
 	sleep 1
 done
 
